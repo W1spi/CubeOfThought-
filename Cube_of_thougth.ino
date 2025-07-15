@@ -1,4 +1,3 @@
-// Расширенный код с дополнительными пасхалками
 #include <U8g2lib.h>
 #include <Wire.h>
 #include "esp_sleep.h"
@@ -12,6 +11,7 @@ const int maxCharsPerLine = 36;
 const int linesPerPage = 4;
 const int scrollDelay = 2000;
 const int phraseDuration = 30000;
+const int easterEggPause = 2000;
 
 const char* phrases[] = {
   "Сломался? Значит, пора собрать себя иначе - прочнее.",
@@ -108,6 +108,7 @@ const char* phrases[] = {
   "Просто дыши. Ты уже справляешься.",
   "Ты достоин. И точка."
 };
+
 const int phraseCount = sizeof(phrases) / sizeof(phrases[0]);
 
 String lines[20];
@@ -120,6 +121,7 @@ int historyCount = 0;
 
 unsigned long lastScrollTime = 0;
 unsigned long startTime = 0;
+unsigned long easterEggDelayUntil = 0;
 
 unsigned long dualButtonStartTime = 0;
 bool inEasterEgg = false;
@@ -127,7 +129,6 @@ bool inEasterEgg = false;
 bool prevBtnNext = false;
 bool prevBtnPrev = false;
 
-// Дополнительные переменные для новых пасхалок
 unsigned long btnNextPressedTime = 0;
 unsigned long btnPrevPressedTime = 0;
 
@@ -162,7 +163,12 @@ void loop() {
   bool btnN = digitalRead(btnNext);
   bool btnP = digitalRead(btnPrev);
 
-  // Проверка на одновременное нажатие для основной пасхалки
+  if (now < easterEggDelayUntil) {
+    esp_sleep_enable_timer_wakeup(50 * 1000);
+    esp_light_sleep_start();
+    return;
+  }
+
   if (btnN && btnP) {
     if (dualButtonStartTime == 0) {
       dualButtonStartTime = now;
@@ -174,7 +180,6 @@ void loop() {
     dualButtonStartTime = 0;
   }
 
-  // Проверка на долгое нажатие отдельно
   if (btnN) {
     if (btnNextPressedTime == 0) btnNextPressedTime = now;
     if (!inEasterEgg && now - btnNextPressedTime > 5000) {
@@ -195,7 +200,6 @@ void loop() {
     btnPrevPressedTime = 0;
   }
 
-  // Конями-пасхалка (влево, вправо, влево, вправо)
   if (btnN && !prevBtnNext) {
     if (konamiSeq[konamiIndex] == 'R') {
       konamiIndex++;
@@ -218,10 +222,23 @@ void loop() {
   }
 
   if (inEasterEgg) {
+    if (now - lastScrollTime > scrollDelay) {
+      currentLine++;
+      if (currentLine > totalLines - linesPerPage) currentLine = 0;
+      drawText();
+      lastScrollTime = now;
+    }
+
     if (btnN || btnP || now - startTime > 60000) {
       inEasterEgg = false;
       nextPhrase();
     }
+
+    prevBtnNext = btnN;
+    prevBtnPrev = btnP;
+
+    esp_sleep_enable_timer_wakeup(50 * 1000);
+    esp_light_sleep_start();
     return;
   }
 
@@ -293,6 +310,9 @@ void drawText() {
 void showEasterEgg(const char* text) {
   inEasterEgg = true;
   startTime = millis();
+  lastScrollTime = millis();
+  easterEggDelayUntil = millis() + easterEggPause;
+
   totalLines = 0;
   currentLine = 0;
 
